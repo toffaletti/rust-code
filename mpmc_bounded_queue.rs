@@ -26,6 +26,8 @@
  * policies, either expressed or implied, of Dmitry Vyukov.
  */
 
+// http://www.1024cores.net/home/lock-free-algorithms/queues/bounded-mpmc-queue
+
 use std::unstable::sync::UnsafeArc;
 use std::unstable::atomics::{AtomicUint,Relaxed,Release,Acquire};
 use std::vec;

@@ -4,6 +4,7 @@ use std::unstable::atomics::{AtomicUint,AtomicPtr,Acquire,Release,Relaxed};
 use std::cast;
 
 // TODO: backoff policy for retry loop
+// http://www.cse.chalmers.se/~tsigas/papers/spaa01.pdf
 
 struct Queue<T> {
     priv state: UnsafeArc<State<T>>,
