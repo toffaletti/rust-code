@@ -1,7 +1,7 @@
 use std::ptr::mut_null;
 use std::cast;
 use std::unstable::sync::UnsafeArc;
-use std::unstable::atomics::{fence,AcqRel};
+use std::unstable::atomics::{fence,Relaxed};
 
 // https://groups.google.com/forum/#!topic/comp.programming.threads/f18HQB07vZE
 
@@ -75,9 +75,9 @@ impl<T> State<T> {
             let n = cast::transmute(n);
             (*self.head).value = Some(value);
             // TODO: don't think this is correct.
-            fence(AcqRel);
+            fence(Relaxed);
             (*self.head).link = n;
-            fence(AcqRel);
+            fence(Relaxed);
             self.head = n;
         }
     }
