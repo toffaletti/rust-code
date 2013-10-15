@@ -84,9 +84,7 @@ impl<V> JudyL<V> {
     #[fixed_stack_segment]
     fn insert(&mut self, index: Word_t, value: ~V) -> bool {
         unsafe {
-            let mut err = JError_t::new();
-            let v = JudyLIns(&mut self.m, index, &mut err);
-            debug2!("err: {:?}", err);
+            let v = JudyLIns(&mut self.m, index, mut_null());
             if v == mut_null() {
                 false
             } else if *v != mut_null() {
@@ -101,8 +99,7 @@ impl<V> JudyL<V> {
     #[fixed_stack_segment]
     fn get<'a>(&'a self, index: Word_t) -> Option<&'a V> {
         unsafe {
-            let mut err = JError_t::new();
-            let v = JudyLGet(self.m as Pcvoid_t, index, &mut err);
+            let v = JudyLGet(self.m as Pcvoid_t, index, mut_null());
             if v == mut_null() {
                 None
             } else {
@@ -115,8 +112,7 @@ impl<V> JudyL<V> {
     fn free(&mut self) -> Word_t {
         if self.m != mut_null() {
             unsafe {
-                let mut err = JError_t::new();
-                JudyLFreeArray(&mut self.m, &mut err)
+                JudyLFreeArray(&mut self.m, mut_null())
             }
             //assert!(self.m == mut_null());
         } else {
@@ -126,6 +122,13 @@ impl<V> JudyL<V> {
 
     fn iter<'a>(&'a self) -> JudyLIterator<'a, V> {
         JudyLIterator{ m: self.m as Pcvoid_t, i: 0, lifetime: None}
+    }
+
+    #[fixed_stack_segment]
+    fn count(&self, index1: Word_t, index2: Word_t) -> Word_t {
+        unsafe {
+            JudyLCount(self.m as Pcvoid_t, index1, index2, mut_null())
+        }
     }
 }
 
@@ -141,9 +144,7 @@ impl<K, V> JudyHS<K, V> {
     #[fixed_stack_segment]
     fn insert(&mut self, key: K, value: ~V) -> bool {
         unsafe {
-            let mut err = JError_t::new();
-            let v = JudyHSIns(&mut self.m, to_unsafe_ptr(&key) as Pcvoid_t, size_of::<K>() as Word_t, &mut err);
-            debug2!("err: {:?}", err);
+            let v = JudyHSIns(&mut self.m, to_unsafe_ptr(&key) as Pcvoid_t, size_of::<K>() as Word_t, mut_null());
             if v == mut_null() {
                 false
             } else if *v != mut_null() {
@@ -187,16 +188,36 @@ struct JudyLIterator<'self, V> {
 }
 
 impl<'self, V> Iterator<(Word_t, &'self V)> for JudyLIterator<'self, V> {
-
     #[fixed_stack_segment]
     fn next(&mut self) -> Option<(Word_t, &'self V)> {
         unsafe {
-            let mut err = JError_t::new();
-            let v = JudyLNext(self.m, &self.i, &mut err);
+            let v = JudyLNext(self.m, &self.i, mut_null());
             if v == mut_null() {
                 None
             } else {
                 Some((self.i, cast::transmute(*v)))
+            }
+        }
+    }
+}
+
+impl<'self, V> RandomAccessIterator<(Word_t, &'self V)> for JudyLIterator<'self, V> {
+    #[fixed_stack_segment]
+    fn indexable(&self) -> uint {
+        unsafe {
+            JudyLCount(self.m, 0, -1, mut_null()) as uint
+        }
+    }
+
+    #[fixed_stack_segment]
+    fn idx(&self, index: uint) -> Option<(Word_t, &'self V)> {
+        unsafe {
+            // TODO: maybe JudyLByCount would be better here?
+            let v = JudyLGet(self.m, index as Word_t, mut_null());
+            if v == mut_null() {
+                None
+            } else {
+                Some((index as Word_t, cast::transmute(*v)))
             }
         }
     }
@@ -231,5 +252,4 @@ mod tests {
         }
         assert!(h.free() > 0);
     }
-
 }
