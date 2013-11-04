@@ -2,14 +2,14 @@
  * Copyright (c) 2010-2011 Dmitry Vyukov. All rights reserved.
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
- * 
+ *
  *    1. Redistributions of source code must retain the above copyright notice,
  *       this list of conditions and the following disclaimer.
- * 
+ *
  *    2. Redistributions in binary form must reproduce the above copyright
  *       notice, this list of conditions and the following disclaimer in the
  *       documentation and/or other materials provided with the distribution.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY DMITRY VYUKOV "AS IS" AND ANY EXPRESS OR IMPLIED
  * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
@@ -31,7 +31,8 @@
 use std::unstable::sync::UnsafeArc;
 use std::unstable::atomics::{AtomicUint,Relaxed,Release,Acquire};
 use std::vec;
-use std::num::{Exponential,Algebraic,Round};
+use std::uint;
+use std::uint::next_power_of_two;
 
 struct Node<T> {
     sequence: AtomicUint,
@@ -59,8 +60,7 @@ impl<T: Send> State<T> {
             if capacity < 2 {
                 2u
             } else {
-                // use next power of 2 as capacity
-                2f64.pow(&((capacity as f64).log2().ceil())) as uint
+                next_power_of_two(capacity)
             }
         } else {
             capacity
@@ -81,12 +81,13 @@ impl<T: Send> State<T> {
     }
 
     fn push(&mut self, value: T) -> bool {
+        let buffer_len = self.buffer.len();
         let mask = self.mask;
         let mut pos = self.enqueue_pos.load(Relaxed);
         loop {
             let node = &mut self.buffer[pos & mask];
             let seq = node.sequence.load(Acquire);
-            let diff: int = seq as int - pos as int;
+            let diff: i64 = seq as i64 - pos as i64;
 
             if diff == 0 {
                 let enqueue_pos = self.enqueue_pos.compare_and_swap(pos, pos+1, Relaxed);
@@ -97,7 +98,7 @@ impl<T: Send> State<T> {
                 } else {
                     pos = enqueue_pos;
                 }
-            } else if (diff < 0) {
+            } else if diff < 0 || ((diff-1) as uint == buffer_len) {
                 return false
             } else {
                 pos = self.enqueue_pos.load(Relaxed);
@@ -112,8 +113,8 @@ impl<T: Send> State<T> {
         loop {
             let node = &mut self.buffer[pos & mask];
             let seq = node.sequence.load(Acquire);
-            let diff: int = seq as int - (pos + 1) as int;
-            if diff == 0 {
+            let diff: i64 = seq as i64 - (pos + 1) as i64;
+            if diff == 0 || (diff < 0 && (diff.abs()-1) as uint == uint::max_value) {
                 let dequeue_pos = self.dequeue_pos.compare_and_swap(pos, pos+1, Relaxed);
                 if dequeue_pos == pos {
                     let value = node.value.take();
