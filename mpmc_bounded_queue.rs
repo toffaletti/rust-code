@@ -32,7 +32,6 @@ use std::unstable::sync::UnsafeArc;
 use std::unstable::atomics::{AtomicUint,Relaxed,Release,Acquire};
 use std::vec;
 use std::uint;
-use std::uint::next_power_of_two;
 
 struct Node<T> {
     sequence: AtomicUint,
@@ -60,7 +59,7 @@ impl<T: Send> State<T> {
             if capacity < 2 {
                 2u
             } else {
-                next_power_of_two(capacity)
+                uint::next_power_of_two(capacity)
             }
         } else {
             capacity
@@ -98,7 +97,11 @@ impl<T: Send> State<T> {
                 } else {
                     pos = enqueue_pos;
                 }
-            } else if diff < 0 || (pos == 0 && ((diff-1) as uint % buffer_len == 0)) {
+            } else if diff < 0 {
+                return false
+            } else if pos == 0 && (seq-1) as uint % buffer_len == 0 {
+                // handle the case where enqueue_pos has overflowed
+                // back to 0 but the queue is full
                 return false
             } else {
                 pos = self.enqueue_pos.load(Relaxed);
@@ -114,7 +117,11 @@ impl<T: Send> State<T> {
             let node = &mut self.buffer[pos & mask];
             let seq = node.sequence.load(Acquire);
             let diff: i64 = seq as i64 - (pos + 1) as i64;
-            if diff == 0 || (diff < 0 && (diff.abs()-1) as uint == uint::max_value) {
+            if diff == 0 || (seq == 0 && pos == uint::max_value) {
+                // the part after || handles the case where
+                // pos+1 would overflow back to 0 causing
+                // diff to be negative and thus dequeue to fail
+                // when there is infact data in the queue
                 let dequeue_pos = self.dequeue_pos.compare_and_swap(pos, pos+1, Relaxed);
                 if dequeue_pos == pos {
                     let value = node.value.take();
