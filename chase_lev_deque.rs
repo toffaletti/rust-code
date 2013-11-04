@@ -39,6 +39,9 @@ impl<T> Deque<T> {
             if b - t > (*a).size() - 1 {
                 let new_array: *mut Array<T> = cast::transmute((*a).grow(t, b));
                 a = new_array;
+                let ss = (*a).size();
+                self.bottom.store(b + ss, Relaxed);
+                // TODO: might need to set b = b + ss here also
                 cast::transmute::<*mut Array<T>, ~Array<T>>(self.array.swap(new_array, Relaxed));
             }
             (*a).put(b, cast::transmute(x));
@@ -82,20 +85,31 @@ impl<T> Deque<T> {
         unsafe {
             let t = self.top.load(Acquire);
             fence(SeqCst);
+            let old_a = self.array.load(Relaxed);
             let b = self.bottom.load(Acquire);
-            if t < b {
-                // non empty
-                let a = self.array.load(Relaxed);
-                let x = (*a).get(t);
-                if self.top.compare_and_swap(t, t + 1, SeqCst) != t {
-                    // failed race
-                    Err(false)
-                } else {
-                    Ok(Some(cast::transmute(x)))
-                }
-            } else {
+            let a = self.array.load(Relaxed);
+            let size = b - t;
+            if size <= 0 {
                 // empty
-                Ok(None)
+                return Ok(None)
+            }
+            // TODO: i think this (*a) access is still a race...hmmm
+            if (size % (*a).size()) == 0 {
+                if a == old_a && t == self.top.load(Relaxed) {
+                    // empty
+                    return Ok(None)
+                } else {
+                    // abort, failed race
+                    return Err(false)
+                }
+            }
+            // non empty
+            let x = (*a).get(t);
+            if self.top.compare_and_swap(t, t + 1, SeqCst) != t {
+                // failed race
+                Err(false)
+            } else {
+                Ok(Some(cast::transmute(x)))
             }
         }
     }
