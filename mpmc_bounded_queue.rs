@@ -98,7 +98,7 @@ impl<T: Send> State<T> {
                 } else {
                     pos = enqueue_pos;
                 }
-            } else if diff < 0 || ((diff-1) as uint == buffer_len) {
+            } else if diff < 0 || (pos == 0 && ((diff-1) as uint % buffer_len == 0)) {
                 return false
             } else {
                 pos = self.enqueue_pos.load(Relaxed);
