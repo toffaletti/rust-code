@@ -116,24 +116,22 @@ impl<T> Deque<T> {
 }
 
 struct Array<T> {
-    size: AtomicUint,
-    buf: AtomicPtr<~[AtomicPtr<T>]>,
+    size: uint,
+    buf: ~[AtomicPtr<T>],
 }
 
 impl<T> Array<T> {
     fn new(size: uint) -> Array<T> {
-        unsafe {
-            Array{
-                size:AtomicUint::new(size),
-                buf: AtomicPtr::<~[AtomicPtr<T>]>::new(cast::transmute(vec::from_fn(1<<size, |_| {
-                    AtomicPtr::<T>::new(mut_null())
-                })))
-            }
+        Array{
+            size:size,
+            buf: vec::from_fn(1<<size, |_| {
+                AtomicPtr::<T>::new(mut_null())
+            })
         }
     }
 
     fn grow(&self, top: uint, bottom: uint) -> ~Array<T> {
-        let mut a = ~Array::new(self.size.load(Relaxed)+1);
+        let mut a = ~Array::new(self.size+1);
         for i in range(top, bottom) {
             a.put(i, self.get(i));
         }
@@ -141,25 +139,15 @@ impl<T> Array<T> {
     }
 
     fn size(&self) -> uint {
-        1<<self.size.load(Relaxed)
+        1<<self.size
     }
 
     fn put(&mut self, i: uint, v: *mut T) {
-        unsafe {
-            let buf = self.buf.load(Relaxed);
-            do vec::raw::mut_buf_as_slice(buf as *mut AtomicPtr<T>, self.size()) |buf| {
-                buf[i % self.size()].store(v, Relaxed);
-            }
-        }
+        self.buf[i % self.size()].store(v, Relaxed);
     }
 
     fn get(&self, i: uint) -> *mut T {
-        unsafe {
-            let buf = self.buf.load(Relaxed);
-            do vec::raw::mut_buf_as_slice(buf as *mut AtomicPtr<T>, self.size()) |buf| {
-                buf[i % self.size()].load(Relaxed)
-            }
-        }
+        self.buf[i % self.size()].load(Relaxed)
     }
 }
 
