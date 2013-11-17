@@ -85,19 +85,21 @@ impl<T> Deque<T> {
     }
 
     pub fn steal(&mut self) -> Option<T> {
-        // TODO: need to expose rust_try_little_lock
         unsafe {
-            self.lock.lock(|| {
+            match self.lock.try_lock(|| {
                 let head = self.headIndex.load(Acquire);
                 self.headIndex.store(head+1, Release);
                 fence(SeqCst);
                 if head < self.tailIndex.load(Acquire) {
-                        Some(cast::transmute(self.array[head & self.mask].load(Relaxed)))
+                    Some(cast::transmute(self.array[head & self.mask].load(Relaxed)))
                 } else {
                     self.headIndex.store(head, Release);
                     None
                 }
-            })
+            }) {
+                Some(T) => T,
+                None => None
+            }
         }
     }
 
@@ -117,10 +119,10 @@ mod tests {
     #[test]
     fn test() {
         let mut q = Deque::new(10);
-        q.push(~1);
-        assert_eq!(Some(~1), q.pop());
+        q.push(1);
+        assert_eq!(Some(1), q.pop());
         assert_eq!(None, q.steal());
-        q.push(~2);
-        assert_eq!(Some(~2), q.steal());
+        q.push(2);
+        assert_eq!(Some(2), q.steal());
     }
 }
