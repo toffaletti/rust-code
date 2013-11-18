@@ -154,6 +154,10 @@ impl<T: Send> State<T> {
 
 #[cfg(test)]
 mod tests {
+    use std::task;
+    use std::comm;
+    use std::unstable::sync::{UnsafeArc};
+    use std::unstable::atomics::{AtomicUint, Relaxed};
     use super::Deque;
 
     #[test]
@@ -180,4 +184,82 @@ mod tests {
         assert_eq!(Some(3), q.pop());
         assert_eq!(None, q.steal());
     }
+
+    #[test]
+    fn test_steal() {
+        let work_units = 1000u;
+        let stealers = 8u;
+        let q = Deque::with_capacity(100);
+        let counter = UnsafeArc::new(AtomicUint::new(0));
+        let mut completion_ports = ~[];
+
+        let (port, chan)  = comm::stream();
+        let (completion_port, completion_chan) = comm::stream();
+        completion_ports.push(completion_port);
+        chan.send(q.clone());
+        {
+            let counter = counter.clone();
+            do task::spawn_sched(task::SingleThreaded) {
+                let mut q = port.recv();
+                for i in range(0, work_units) {
+                    q.push(i);
+                }
+
+                let mut count = 0u;
+                loop {
+                    match q.pop() {
+                        Some(_) => unsafe {
+                            count += 1;
+                            (*counter.get()).fetch_add(1, Relaxed);
+                            // simulate work
+                            task::deschedule();
+                        },
+                        None => break,
+                    }
+                }
+                debug!("count: {}", count);
+                completion_chan.send(0);
+            }
+        }
+
+        for _ in range(0, stealers) {
+            let (port, chan)  = comm::stream();
+            let (completion_port, completion_chan) = comm::stream();
+            completion_ports.push(completion_port);
+            chan.send(q.clone());
+            let counter = counter.clone();
+            do task::spawn_sched(task::SingleThreaded) {
+                let mut count = 0u;
+                let mut q = port.recv();
+                loop {
+                    match q.steal() {
+                        Some(_) => unsafe {
+                            count += 1;
+                            (*counter.get()).fetch_add(1, Relaxed);
+                        },
+                        None => (),
+                    }
+                    // simulate work
+                    task::deschedule();
+                    unsafe {
+                        if (*counter.get()).load(Relaxed) == work_units {
+                            break
+                        }
+                    }
+                }
+                debug!("count: {}", count);
+                completion_chan.send(0);
+            }
+        }
+
+        // wait for all tasks to finish work
+        for completion_port in completion_ports.iter() {
+            assert_eq!(0, completion_port.recv());
+        }
+
+        unsafe {
+            assert_eq!(work_units, (*counter.get()).load(Relaxed));
+        }
+    }
+
 }
